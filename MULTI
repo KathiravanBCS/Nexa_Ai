@@ -1,0 +1,53 @@
+import React from 'react';
+import { cn } from '@/utils/cn';
+import Sidebar from '@/components/sidebar';
+import Chat from '@/components/chat';
+
+const Page = () => {
+  const [open, setOpen] = React.useState(true);
+
+  return (
+    <main className="h-screen overflow-hidden flex bg-white">
+      <Sidebar open={open} setOpen={setOpen} />
+      <section className="flex-1 min-h-0 flex flex-col">
+        <Chat />
+      </section>
+    </main>
+  );
+};
+
+export default Page;
+
+// components/chat.tsx
+import React from 'react';
+import { cn } from '@/utils/cn';
+import ScrollArea from '@/components/scroll-area';
+
+const Chat = () => {
+  return (
+    <div className="flex-1 min-h-0 flex flex-col">
+      <header className="sticky top-0 z-10 flex items-center justify-between px-6 py-4 bg-white/80 backdrop-blur supports-[backdrop-filter]:bg-white/60 border-b">
+        Chat Title
+      </header>
+      <ScrollArea className="flex-1 min-h-0 px-6">
+        {/* Messages go here */}
+      </ScrollArea>
+    </div>
+  );
+};
+
+export default Chat;
+
+// components/sidebar.tsx
+import React from 'react';
+import { cn } from '@/utils/cn';
+
+const Sidebar = ({ open, setOpen }) => {
+  return (
+    <aside className={cn("h-screen flex-shrink-0 border-r bg-slate-50/60 flex flex-col transition-all", open ? "w-64" : "w-16")}>
+      {/* Sidebar content goes here */}
+    </aside>
+  );
+};
+
+export default Sidebar;
