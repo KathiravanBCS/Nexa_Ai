@@ -32,8 +32,12 @@ export default function Chat({ sidebarOpen, setSidebarOpen }: { sidebarOpen: boo
   const [input, setInput] = useState("")
   const [images, setImages] = useState<ImageData[]>([])
   const [loading, setLoading] = useState(false)
+  const [listening, setListening] = useState(false)
+  const [interimTranscript, setInterimTranscript] = useState("")
   const scrollerRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const recognitionRef = useRef<any>(null)
+  const askRef = useRef<() => Promise<void> | void>(() => {})
 
   // Load messages when threadId changes
   useEffect(() => {
@@ -71,6 +75,70 @@ export default function Chat({ sidebarOpen, setSidebarOpen }: { sidebarOpen: boo
   useEffect(() => {
     scrollerRef.current?.scrollTo({ top: scrollerRef.current.scrollHeight })
   }, [messages, loading])
+
+  // Setup SpeechRecognition (Web Speech API) when available
+  useEffect(() => {
+    const win: any = typeof window !== "undefined" ? window : undefined
+    const SpeechRecognition = win?.SpeechRecognition || win?.webkitSpeechRecognition
+    if (!SpeechRecognition) return
+
+    const recog = new SpeechRecognition()
+    recog.lang = "en-US"
+    recog.interimResults = true
+    recog.maxAlternatives = 1
+
+    recog.onstart = () => {
+      setListening(true)
+      setInterimTranscript("")
+    }
+
+    recog.onresult = (event: any) => {
+      let interim = ""
+      let final = ""
+      for (let i = event.resultIndex; i < event.results.length; ++i) {
+        const res = event.results[i]
+        if (res.isFinal) final += res[0].transcript
+        else interim += res[0].transcript
+      }
+      if (final) {
+        // Append final transcript to input and auto-send
+        setInput((prev) => (prev ? prev + " " + final : final))
+        setInterimTranscript("")
+        // small timeout to allow UI update before sending
+        setTimeout(() => {
+          const fn = askRef.current
+          try {
+            const p = fn()
+            if (p && typeof (p as any).catch === "function") (p as any).catch(() => {})
+          } catch {}
+        }, 150)
+      } else {
+        setInterimTranscript(interim)
+      }
+    }
+
+    recog.onerror = (e: any) => {
+      console.error("SpeechRecognition error", e)
+    }
+
+    recog.onend = () => {
+      setListening(false)
+      setInterimTranscript("")
+    }
+
+  recognitionRef.current = recog
+
+    return () => {
+      try {
+        recog.onresult = null
+        recog.onend = null
+        recog.onerror = null
+        recog.onstart = null
+        recog.stop()
+      } catch {}
+      recognitionRef.current = null
+    }
+  }, [])
 
   const disabled = useMemo(() => loading || (!input.trim() && images.length === 0), [loading, input, images])
 
@@ -145,10 +213,31 @@ export default function Chat({ sidebarOpen, setSidebarOpen }: { sidebarOpen: boo
     }
   }, [disabled, images, input, messages, threadId])
 
+  // Keep askRef up-to-date so SpeechRecognition can call the latest version
+  useEffect(() => {
+    askRef.current = ask
+  }, [ask])
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault()
       ask()
+    }
+  }
+
+  const toggleListening = () => {
+    const recog = recognitionRef.current
+    if (!recog) return
+    try {
+      if (listening) {
+        recog.stop()
+      } else {
+        // clear interim and start
+        setInterimTranscript("")
+        recog.start()
+      }
+    } catch (e) {
+      console.error("toggleListening error", e)
     }
   }
 
@@ -324,13 +413,24 @@ export default function Chat({ sidebarOpen, setSidebarOpen }: { sidebarOpen: boo
           />
 
           <div className="flex items-center gap-1">
-            <Button variant="ghost" size="icon" className="rounded-full h-10 w-10" disabled>
-              <Mic className="h-5 w-5 text-slate-500" />
+            <Button
+              variant={listening ? "default" : "ghost"}
+              size="icon"
+              className={"rounded-full h-10 w-10"}
+              onClick={toggleListening}
+              aria-pressed={listening}
+              title={listening ? "Stop listening" : "Start speaking"}
+            >
+              {listening ? (
+                <Loader2 className="h-5 w-5 animate-spin text-red-500" />
+              ) : (
+                <Mic className="h-5 w-5 text-slate-500" />
+              )}
             </Button>
 
-            <Button 
-              onClick={ask} 
-              className="rounded-full h-10 w-10 p-0" 
+            <Button
+              onClick={ask}
+              className="rounded-full h-10 w-10 p-0"
               disabled={disabled}
               size="icon"
             >
@@ -340,7 +440,9 @@ export default function Chat({ sidebarOpen, setSidebarOpen }: { sidebarOpen: boo
         </div>
 
         <p className="text-xs text-center text-slate-400 mt-2">
-          Nexa can analyze images and answer questions. Feel free to upload anything!
+          Nexa can analyze images and answer questions. Feel free to upload anything! {interimTranscript && (
+            <span className="block text-amber-600">Listening: "{interimTranscript}"</span>
+          )}
         </p>
       </div>
     </div>
